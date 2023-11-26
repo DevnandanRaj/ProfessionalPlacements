@@ -3,14 +3,19 @@
 from routes.user_routes import user_bp
 from flask import Flask
 from flask_mongoengine import MongoEngine
-from config import MONGODB_ATLAS_URI
+from config import MONGODB_ATLAS_URI, JWT_SECRET_KEY
+from flask_jwt_extended import JWTManager
 
 app = Flask(__name__)
 app.config['MONGODB_SETTINGS'] = {
     'host': MONGODB_ATLAS_URI,
     'connect': False  # Set to False to avoid automatic connection on app creation
 }
-
+jwt = JWTManager(app)
+# Replace with your actual secret key
+app.config['JWT_SECRET_KEY'] = JWT_SECRET_KEY
+app.config['JWT_BLACKLIST_ENABLED'] = True
+app.config['JWT_BLACKLIST_TOKEN_CHECKS'] = ['access', 'refresh']
 db = MongoEngine(app)
 
 # Import your user routes

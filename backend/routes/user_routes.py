@@ -4,7 +4,7 @@ import datetime
 from flask import Blueprint, request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from models.user import User, HiringManager, JobSeeker
-
+from middleware.auth_middleware import authenticate, generate_token, check_token
 user_bp = Blueprint('user_bp', __name__)
 
 # Route to register a new user (both job seekers and hiring managers)
@@ -62,9 +62,11 @@ def login_user():
     user = User.objects(email=data['email']).first()
 
     if user and check_password_hash(user.password, data['password']):
-        # You can implement token-based authentication here
-        return jsonify({'message': 'Login successful'}), 200
+        # User credentials are valid, generate a token
+        access_token = generate_token(user)
+        return jsonify({'message': 'Login successful', 'access_token': access_token}), 200
     else:
         return jsonify({'message': 'Invalid email or password'}), 401
 
-# Add other routes as needed
+
+

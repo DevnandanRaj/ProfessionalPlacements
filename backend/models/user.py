@@ -21,6 +21,7 @@ class JobSeeker(Document):
 class HiringManager(Document):
     user = ReferenceField(User)
     name = StringField(required=True)
+    company_name = StringField(required=True)
     # Other HiringManager fields
 
 
