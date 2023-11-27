@@ -1,43 +1,40 @@
-import datetime
-from flask import jsonify
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-from models.user import User
-
-jwt = JWTManager()
+# middleware/auth_middleware.py
+import jwt
+from flask import request, jsonify, current_app
+from models.blackListed import RevokedToken
 
 
-def create_app(app):
-    jwt.init_app(app)
+def auth_middleware(allowed_roles=None):
+    def middleware_decorator(func):
+        def wrapper(*args, **kwargs):
+            try:
+                token = request.headers.get('Authorization')
+                if not token:
+                    return jsonify({'message': 'Authorization token not found'}), 401
 
-    @jwt.user_identity_loader
-    def user_identity_lookup(user):
-        return user.email
+                # Check if the token is blacklisted
+                is_blacklisted = RevokedToken.objects(token=token).first()
+                if is_blacklisted:
+                    return jsonify({'message': 'Token revoked. Please login again.'}), 401
 
-    @jwt.user_loader_callback_loader
-    def user_loader_callback(identity):
-        return User.objects(email=identity).first()
+                # Verify the access token
+                decoded = jwt.decode(
+                    token, current_app.config['JWT_SECRET_KEY'], algorithms=['HS256'])
+                user_id = decoded['user_id']
+                user_role = decoded.get('role', None)
 
-    return app
+                # Check if the user has the required role for specific routes
+                if allowed_roles is not None and user_role not in allowed_roles:
+                    return jsonify({'message': 'Insufficient permissions to access this resource'}), 403
 
+                request.user = {'user_id': user_id, 'role': user_role}
+                return func(*args, **kwargs)
 
-def authenticate(email, password):
-    user = User.objects(email=email).first()
-    if user and user.check_password(password):
-        return user
+            except jwt.ExpiredSignatureError:
+                return jsonify({'message': 'Token has expired'}), 401
+            except jwt.InvalidTokenError:
+                return jsonify({'message': 'Invalid token'}), 401
 
+        return wrapper
 
-def identity(payload):
-    user_id = payload['identity']
-    return User.objects(id=user_id).first()
-
-
-@jwt_required()
-def check_token():
-    current_user = get_jwt_identity()
-    return jsonify(logged_in_as=current_user), 200
-
-def generate_token(user):
-    expires = datetime.timedelta(days=1)  # You can adjust the expiration time
-    access_token = create_access_token(
-        identity=str(user.id), expires_delta=expires)
-    return access_token
+    return middleware_decorator

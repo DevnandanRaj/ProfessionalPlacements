@@ -1,10 +1,11 @@
-
-# routes/user_routes.py
 import datetime
-from flask import Blueprint, request, jsonify
+import jwt
+from flask import Blueprint, request, jsonify, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 from models.user import User, HiringManager, JobSeeker
-from middleware.auth_middleware import authenticate, generate_token, check_token
+from models.blackListed import RevokedToken
+from middleware.auth_middleware import auth_middleware
+
 user_bp = Blueprint('user_bp', __name__)
 
 # Route to register a new user (both job seekers and hiring managers)
@@ -46,7 +47,7 @@ def register_user():
         hiring_manager = HiringManager(
             user=new_user,
             name=data['name'],
-            company_name =data['company_name']
+            company_name=data['company_name']
             # Add other HiringManager fields as needed
         )
         hiring_manager.save()
@@ -62,11 +63,33 @@ def login_user():
     user = User.objects(email=data['email']).first()
 
     if user and check_password_hash(user.password, data['password']):
-        # User credentials are valid, generate a token
-        access_token = generate_token(user)
-        return jsonify({'message': 'Login successful', 'access_token': access_token}), 200
+        # Include role information in the token
+        role_info = {
+            'user_id': str(user.id),
+            'role': user.role,  # Assuming the user model has a 'role' field
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+        }
+        token = jwt.encode(
+            role_info, current_app.config['JWT_SECRET_KEY'], algorithm=current_app.config['JWT_ALGORITHM'])
+        return jsonify({'token': token, "msg": f"Welcome {user.role}"}), 200
     else:
         return jsonify({'message': 'Invalid email or password'}), 401
+# Route to log out a user
 
 
+@user_bp.route('/logout', methods=['POST'])
+@auth_middleware(allowed_roles=['job_seeker', 'hiring_manager'])
+def logout_user():
+    try:
+        token = request.headers.get('Authorization')
+        # Check if the token is already revoked
+        if not RevokedToken.objects(token=token):
+            RevokedToken(token=token).save()
+            return jsonify({'message': 'Logged out successfully'}), 200
+        else:
+            return jsonify({'message': 'Token already revoked'}), 400
 
+    except jwt.ExpiredSignatureError:
+        return jsonify({'message': 'Token has expired'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'message': 'Invalid token'}), 401
