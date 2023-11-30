@@ -1,14 +1,16 @@
 import datetime
 import jwt
-from flask import Blueprint, request, jsonify, current_app
+import random
+import string
+from flask import Blueprint, request, jsonify, current_app 
 from werkzeug.security import generate_password_hash, check_password_hash
 from models.user import User, HiringManager, JobSeeker
 from models.blackListed import RevokedToken
 from middleware.auth_middleware import auth_middleware
-
+from flask_mail import Mail, Message
 user_bp = Blueprint('user_bp', __name__)
 
-# Route to register a new user (both job seekers and hiring managers)
+
 
 
 @user_bp.route('/register', methods=['POST'])
@@ -93,3 +95,60 @@ def logout_user():
         return jsonify({'message': 'Token has expired'}), 401
     except jwt.InvalidTokenError:
         return jsonify({'message': 'Invalid token'}), 401
+
+# Route for forgot password
+
+
+@user_bp.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    email = data.get('email')
+
+    user = User.objects(email=email).first()
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    new_password = generate_random_password()
+    hashed_password = generate_password_hash(new_password, method='sha256')
+
+    user.password = hashed_password
+    user.save()
+
+    send_password_reset_email(user.email, new_password)
+
+    return jsonify({'message': 'Password reset successful. Check your email for the new password.'}), 200
+
+# Function to send a password reset email
+
+
+def send_password_reset_email(email, new_password):
+    from app import mail
+    msg = Message('Password Reset',
+                  sender='professionalplacements650@gmail.com', recipients=[email])
+    msg.body = f'Your new password is: {new_password}, use this to login'
+
+    # Send the email
+    mail.send(msg)
+
+# Function to generate a random password
+
+
+def generate_random_password(length=12):
+    # Ensure at least two symbols are included
+    num_symbols = 2
+    num_letters = length - num_symbols
+    symbols = string.punctuation
+
+    # Ensure at least one uppercase letter and one digit
+    uppercase_letter = random.choice(string.ascii_uppercase)
+    digit = random.choice(string.digits)
+
+    # Choose remaining letters and symbols
+    remaining_letters = ''.join(random.choice(string.ascii_letters) for _ in range(num_letters - 2))
+    remaining_symbols = ''.join(random.choice(symbols) for _ in range(num_symbols - 1))
+
+    # Shuffle all the characters
+    password_characters = list(uppercase_letter + digit + remaining_letters + remaining_symbols)
+    random.shuffle(password_characters)
+
+    return ''.join(password_characters)
